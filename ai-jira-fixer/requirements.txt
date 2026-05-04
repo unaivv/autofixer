@@ -1,0 +1,8 @@
+# Python 3.9+ (3.12+ recommended per product spec)
+pydantic>=2.6
+pydantic-settings>=2.2
+requests>=2.31
+# urllib3 v2 warns (and can misbehave) when Python is built against LibreSSL (macOS/Xcode Python).
+urllib3>=1.26.18,<2
+docker>=7.0
+loguru>=0.7

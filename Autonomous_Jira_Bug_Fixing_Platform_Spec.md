@@ -544,7 +544,7 @@ SLACK_WEBHOOK=
 
 ## 11. Siguiente paso recomendado
 
-Implementación en el repo `ai-jira-fixer/` según el FULL BUILD DOC y la sección **12** de decisiones cerradas.
+Implementación en la **raíz de este repo** según el FULL BUILD DOC y la sección **12** de decisiones cerradas.
 
 ---
 
@@ -554,7 +554,7 @@ Estas respuestas sustituyen ambigüedades anteriores en este documento y en el F
 
 | Área | Decisión |
 |------|----------|
-| Jira | **Jira Cloud**. Instrucciones de conexión (token, URL, prueba `myself`) se documentan en `ai-jira-fixer/.env.example` y en el código de `jira_client`. |
+| Jira | **Jira Cloud**. Instrucciones de conexión (token, URL, prueba `myself`) se documentan en `.env.example` y en el código de `jira_client`. |
 | JQL / filtros | **Lo más sencillo**: proyecto + criterios mínimos vía `.env` (ver `config.py`). Label típica `ai-fixable`. |
 | Transición Jira | Tras **PR creado con éxito**, transición a **In Review**. El nombre visible del status es configurable (`JIRA_TRANSITION_IN_REVIEW`); el id se resuelve vía API en integración. |
 | Comentarios Jira | **Solo en éxito** con enlace al PR. Si no hay PR, **no** comentar por defecto: avisar al operador (consola + log de auditoría; Slack opcional). |

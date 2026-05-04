@@ -18,12 +18,13 @@ venv/
 dist/
 build/
 
-# Runtime logs & cloned workspaces (orchestrator writes under ai-jira-fixer/logs)
+# Runtime logs & local agent workspaces
 logs/
 **/logs/
 
 # OS / IDE
 .DS_Store
+**/.DS_Store
 .idea/
 .vscode/
 *.swp

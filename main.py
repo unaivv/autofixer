@@ -1,4 +1,4 @@
-"""Entry point — run from the `ai-jira-fixer` directory with a populated `.env`."""
+"""Entry point — run from the repo root with a populated `.env`."""
 
 from orchestrator.daily_cycle import run_daily_cycle
 

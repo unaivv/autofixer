@@ -664,4 +664,4 @@ Tell coding AI to build in this exact order:
 
 # 25. NEXT BEST DELIVERABLE
 
-Code in `ai-jira-fixer/` (this repo): orchestrator + integrations + prompts, runnable locally with `.env`.
+Code lives at the **repository root** (this repo): orchestrator + integrations + prompts, runnable locally with `.env`.

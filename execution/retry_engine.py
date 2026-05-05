@@ -18,7 +18,23 @@ def retry(
     validation: ValidationResult,
 ) -> tuple[ClaudeExecutionResult, ValidationResult]:
     retry_prompt = Path(__file__).resolve().parent.parent / "prompts" / "retry_fix_prompt.md"
-    suffix = retry_prompt.read_text(encoding="utf-8") + "\n\n## Validation logs\n\n" + validation.logs
+    scope_block = ""
+    if validation.turbo_validation_packages:
+        pkgs = ", ".join(validation.turbo_validation_packages)
+        scope_block = (
+            "## Which packages failed CI here\n\n"
+            f"Docker only ran lint/test/build for: **{pkgs}** (Turborepo `--filter`). "
+            "Fix the failures **in those workspace packages** (source + their tests under the same tree). "
+            "Do **not** chase unrelated apps (for example `apps/web`) unless the log line names that package "
+            "as the failing task **and** your diff already touches it.\n\n"
+        )
+    suffix = (
+        retry_prompt.read_text(encoding="utf-8")
+        + "\n\n"
+        + scope_block
+        + "## Validation logs\n\n"
+        + validation.logs
+    )
     try:
         cr = claude_runner.run_fix(
             settings,

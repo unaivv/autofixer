@@ -43,6 +43,8 @@ class ValidationResult(BaseModel):
     logs: str
     files_changed: int
     lines_changed: int
+    # When non-empty, Docker ran `turbo run … --filter=<these>` only; retry should fix these packages.
+    turbo_validation_packages: list[str] = Field(default_factory=list)
 
 
 class PullRequestResult(BaseModel):

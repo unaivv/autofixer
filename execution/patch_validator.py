@@ -143,16 +143,16 @@ def _detect_pm_install(root: Path, data: dict) -> tuple[str, str]:
     return "npm", "npm install --no-audit --no-fund"
 
 
-def _npm_script_chain(repo: str, turbo_filter_changed: bool) -> tuple[list[str], str]:
+def _npm_script_chain(repo: str, turbo_filter_changed: bool) -> tuple[list[str], str, list[str]]:
     pkg_path = Path(repo) / "package.json"
     if not pkg_path.is_file():
-        return [], "No package.json — skipping npm steps."
+        return [], "No package.json — skipping npm steps.", []
     data = json.loads(pkg_path.read_text(encoding="utf-8"))
     scripts = data.get("scripts") or {}
     order = ["lint", "test", "build"]
     wanted: list[str] = [name for name in order if name in scripts]
     if not wanted:
-        return [], "package.json has no lint/test/build scripts — skipping npm steps."
+        return [], "package.json has no lint/test/build scripts — skipping npm steps.", []
 
     root = Path(repo)
     pm, install = _detect_pm_install(root, data)
@@ -161,7 +161,9 @@ def _npm_script_chain(repo: str, turbo_filter_changed: bool) -> tuple[list[str],
     scoped: list[str] | None = None
     if turbo_filter_changed and _repo_has_turbo(root):
         scoped = _scoped_turbo_package_names(repo)
+    turbo_validation_packages: list[str] = []
     if scoped:
+        turbo_validation_packages = list(scoped)
         filters = " ".join(f"--filter={n}" for n in scoped)
         tasks = " ".join(wanted)
         turbo_line = f"{_turbo_pm_prefix(pm)} run {tasks} {filters}"
@@ -182,7 +184,7 @@ def _npm_script_chain(repo: str, turbo_filter_changed: bool) -> tuple[list[str],
             *run_lines,
         ]
     )
-    return wanted, script
+    return wanted, script, turbo_validation_packages
 
 
 def validate(settings: Settings, workspace_path: str) -> ValidationResult:
@@ -203,14 +205,19 @@ def validate(settings: Settings, workspace_path: str) -> ValidationResult:
             logs="\n".join(logs),
             files_changed=files,
             lines_changed=lines,
+            turbo_validation_packages=[],
         )
 
-    wanted, docker_script = _npm_script_chain(
+    wanted, docker_script, turbo_validation_packages = _npm_script_chain(
         workspace_path,
         settings.validation_turbo_filter_changed,
     )
     logs.append("## npm plan")
     logs.append(docker_script)
+    if turbo_validation_packages:
+        logs.append("## turbo validation scope")
+        logs.append(", ".join(turbo_validation_packages))
+        logs.append("")
 
     if not wanted:
         logger.info("No npm validation scripts; diff guardrails only.")
@@ -221,6 +228,7 @@ def validate(settings: Settings, workspace_path: str) -> ValidationResult:
             logs="\n".join(logs),
             files_changed=files,
             lines_changed=lines,
+            turbo_validation_packages=[],
         )
 
     logger.info("Docker validation plan:\n{}", docker_script)
@@ -239,4 +247,5 @@ def validate(settings: Settings, workspace_path: str) -> ValidationResult:
         logs="\n".join(logs),
         files_changed=files,
         lines_changed=lines,
+        turbo_validation_packages=turbo_validation_packages,
     )

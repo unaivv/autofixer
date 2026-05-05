@@ -51,6 +51,9 @@ def retry(
             confidence=0,
             files_changed=0,
             lines_changed=0,
+            quota_or_rate_limited=claude_runner.agent_output_suggests_quota_or_rate_limit(str(e)),
         )
+    if cr.quota_or_rate_limited:
+        return cr, validation
     val = patch_validator.validate(settings, workspace.local_path)
     return cr, val

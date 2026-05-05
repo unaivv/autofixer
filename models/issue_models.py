@@ -34,6 +34,8 @@ class ClaudeExecutionResult(BaseModel):
     confidence: int
     files_changed: int
     lines_changed: int
+    # True when combined agent output looks like API billing / quota / rate limits (not a normal code failure).
+    quota_or_rate_limited: bool = False
 
 
 class ValidationResult(BaseModel):

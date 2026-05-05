@@ -19,6 +19,41 @@ from models.issue_models import ClaudeExecutionResult, WorkspaceContext
 
 _CONF_RE = re.compile(r"CONFIDENCE:\s*(\d{1,3})", re.IGNORECASE)
 
+# Heuristic: Claude Code / Anthropic messages when subscription or API usage blocks work.
+_QUOTA_SUBSTRINGS = (
+    "rate limit",
+    "rate_limit",
+    "too many requests",
+    "429",
+    "quota",
+    "usage limit",
+    "usage cap",
+    "exceeded your",
+    "billing",
+    "insufficient_quota",
+    "credit balance",
+    "out of credits",
+    "payment required",
+    "402",
+    "resource_exhausted",
+    "capacity",
+    "overloaded",
+    "try again later",
+    "subscription",
+    "upgrade your plan",
+    "plan limit",
+    "monthly spend",
+    "spend limit",
+)
+
+
+def agent_output_suggests_quota_or_rate_limit(text: str) -> bool:
+    """True if agent stdout/stderr looks like Anthropic quota, billing, or hard rate limits (not repo errors)."""
+    if not (text or "").strip():
+        return False
+    low = text.lower()
+    return any(s in low for s in _QUOTA_SUBSTRINGS)
+
 
 def _resolve_agent_argv(argv: list[str]) -> list[str]:
     """Ensure argv[0] exists and is executable; raise with setup hints if not."""
@@ -227,6 +262,12 @@ def run_fix(
     confidence = _parse_confidence(combined_out)
     files_changed, lines_changed = _git_diff_stats(workspace.local_path)
     success = returncode == 0
+    quota_or_rate_limited = agent_output_suggests_quota_or_rate_limit(combined_out)
+    if quota_or_rate_limited:
+        logger.error(
+            "Agent output suggests Claude / Anthropic quota, billing, or rate limit — "
+            "skipping further automated steps for this issue until limits reset."
+        )
     return ClaudeExecutionResult(
         success=success,
         stdout=stdout,
@@ -234,4 +275,5 @@ def run_fix(
         confidence=confidence,
         files_changed=files_changed,
         lines_changed=lines_changed,
+        quota_or_rate_limited=quota_or_rate_limited,
     )

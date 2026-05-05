@@ -91,6 +91,20 @@ def process_single_issue(
     audit.write("agent_stderr.txt", claude_result.stderr)
     audit.write_json("agent_result.json", claude_result.model_dump())
 
+    if claude_result.quota_or_rate_limited:
+        tail = (claude_result.stdout + "\n" + claude_result.stderr)[-8000:]
+        _operator_alert(
+            settings,
+            audit,
+            f"Claude quota or rate limit — {issue.key}",
+            tail
+            + "\n\nAutomated run stopped: output matches billing / quota / rate-limit patterns. "
+            "No Docker validation and no PR. Renew plan, add credits, or wait for the limit to reset, "
+            "then run the pipeline again.",
+        )
+        summary.failed.append(issue.key)
+        return
+
     with issue_phase(issue.key, "Docker: lint / test / build in Node container (often several minutes)"):
         validation = patch_validator.validate(settings, workspace.local_path)
     audit.write("validation_logs.txt", validation.logs)
@@ -105,12 +119,23 @@ def process_single_issue(
         audit.write("retry_validation_logs.txt", validation.logs)
 
     if not _validation_ok(validation):
-        _operator_alert(
-            settings,
-            audit,
-            f"Validation failed for {issue.key}",
-            validation.logs[-8000:],
-        )
+        if claude_result.quota_or_rate_limited:
+            tail = (claude_result.stdout + "\n" + claude_result.stderr)[-8000:]
+            _operator_alert(
+                settings,
+                audit,
+                f"Claude quota or rate limit during retry — {issue.key}",
+                tail
+                + "\n\nSecond agent pass hit billing / quota / rate limits; Docker was not re-run. "
+                "Fix Anthropic or Claude subscription limits, then retry the issue.",
+            )
+        else:
+            _operator_alert(
+                settings,
+                audit,
+                f"Validation failed for {issue.key}",
+                validation.logs[-8000:],
+            )
         summary.failed.append(issue.key)
         return
 

@@ -13,6 +13,81 @@ from execution.docker_runner import run_in_docker
 from models.issue_models import ValidationResult
 
 
+def _diff_changed_paths(repo: str) -> list[str]:
+    cp = subprocess.run(
+        ["git", "-C", repo, "diff", "--name-only", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return [ln.strip().replace("\\", "/") for ln in (cp.stdout or "").splitlines() if ln.strip()]
+
+
+def _repo_has_turbo(root: Path) -> bool:
+    return (root / "turbo.json").is_file() or (root / "turbo.jsonc").is_file()
+
+
+def _scoped_turbo_package_names(repo: str) -> list[str] | None:
+    """
+    Map git diff paths to workspace package `name` fields for turbo --filter.
+    Returns None when the diff touches the repo root workspace or unmapped paths — caller should run the full graph.
+    """
+    root = Path(repo).resolve()
+    rpj = root / "package.json"
+    if not rpj.is_file():
+        return None
+    try:
+        root_data = json.loads(rpj.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    is_workspace_root = bool(root_data.get("workspaces"))
+
+    names: set[str] = set()
+    for rel_s in _diff_changed_paths(repo):
+        cand = Path(rel_s)
+        if cand.is_absolute():
+            continue
+        full = root / cand
+        if full.is_file():
+            d = full.resolve().parent
+        else:
+            d = (root / cand).resolve().parent
+        cur = d
+        matched = False
+        while True:
+            pj = cur / "package.json"
+            if pj.is_file():
+                try:
+                    data = json.loads(pj.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    return None
+                name = data.get("name")
+                if not name:
+                    return None
+                if cur.resolve() == root and is_workspace_root:
+                    return None
+                names.add(str(name))
+                matched = True
+                break
+            if cur.resolve() == root:
+                break
+            parent = cur.parent
+            if parent == cur:
+                break
+            cur = parent
+        if not matched:
+            return None
+    return sorted(names) if names else None
+
+
+def _turbo_pm_prefix(pm: str) -> str:
+    if pm == "pnpm":
+        return "pnpm exec turbo"
+    if pm == "yarn":
+        return "yarn exec turbo"
+    return "npx turbo"
+
+
 def _diff_against_head(repo: str) -> tuple[int, int, str]:
     cp = subprocess.run(
         ["git", "-C", repo, "diff", "--stat", "HEAD"],
@@ -62,7 +137,7 @@ def _detect_pm_install(root: Path, data: dict) -> tuple[str, str]:
     return "npm", "npm install --no-audit --no-fund"
 
 
-def _npm_script_chain(repo: str) -> tuple[list[str], str]:
+def _npm_script_chain(repo: str, turbo_filter_changed: bool) -> tuple[list[str], str]:
     pkg_path = Path(repo) / "package.json"
     if not pkg_path.is_file():
         return [], "No package.json — skipping npm steps."
@@ -76,6 +151,15 @@ def _npm_script_chain(repo: str) -> tuple[list[str], str]:
     root = Path(repo)
     pm, install = _detect_pm_install(root, data)
     run_lines = [f"{pm} run {name}" for name in wanted]
+
+    scoped: list[str] | None = None
+    if turbo_filter_changed and _repo_has_turbo(root):
+        scoped = _scoped_turbo_package_names(repo)
+    if scoped:
+        filters = " ".join(f"--filter={n}" for n in scoped)
+        tasks = " ".join(wanted)
+        turbo_line = f"{_turbo_pm_prefix(pm)} run {tasks} {filters}"
+        run_lines = [turbo_line]
 
     # corepack: makes pnpm/yarn shims available when package.json declares "packageManager"
     script = "\n".join(
@@ -109,7 +193,10 @@ def validate(settings: Settings, workspace_path: str) -> ValidationResult:
             lines_changed=lines,
         )
 
-    wanted, docker_script = _npm_script_chain(workspace_path)
+    wanted, docker_script = _npm_script_chain(
+        workspace_path,
+        settings.validation_turbo_filter_changed,
+    )
     logs.append("## npm plan")
     logs.append(docker_script)
 

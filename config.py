@@ -96,6 +96,13 @@ class Settings(BaseSettings):
         default=80,
         validation_alias="CONFIDENCE_MIN_APPROVE",
     )
+    # When true (default), repos with turbo.json run `turbo run lint|test|build` only for
+    # workspace packages touched by `git diff HEAD` (avoids unrelated apps failing CI).
+    # Set to false to always run the full monorepo graph (root package.json scripts).
+    validation_turbo_filter_changed: bool = Field(
+        default=True,
+        validation_alias="VALIDATION_TURBO_FILTER_CHANGED",
+    )
 
     @computed_field
     @property

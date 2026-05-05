@@ -20,7 +20,13 @@ def retry(
     retry_prompt = Path(__file__).resolve().parent.parent / "prompts" / "retry_fix_prompt.md"
     suffix = retry_prompt.read_text(encoding="utf-8") + "\n\n## Validation logs\n\n" + validation.logs
     try:
-        cr = claude_runner.run_fix(settings, context_file, workspace, extra_prompt_suffix=suffix)
+        cr = claude_runner.run_fix(
+            settings,
+            context_file,
+            workspace,
+            extra_prompt_suffix=suffix,
+            recall_seed=f"{issue.key} {issue.summary}",
+        )
     except (RuntimeError, FileNotFoundError, OSError) as e:
         cr = ClaudeExecutionResult(
             success=False,

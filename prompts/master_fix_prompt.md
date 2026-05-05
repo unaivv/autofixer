@@ -4,6 +4,7 @@ TASK
 Implement a conservative, minimal fix for the Jira issue described in the attached context.
 
 STRICT RULES
+- If an **ENGRAM (persistent memory)** section appears below, treat it as vetted long-lived context; prefer aligning with it when it clearly applies. Do not contradict it without strong evidence in the repo.
 - Do not refactor unrelated code or files.
 - Keep changes as small as possible while fixing the bug.
 - Match existing style and patterns.

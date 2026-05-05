@@ -14,6 +14,7 @@ from pathlib import Path
 from loguru import logger
 
 from config import Settings
+from integrations import engram_context
 from models.issue_models import ClaudeExecutionResult, WorkspaceContext
 
 _CONF_RE = re.compile(r"CONFIDENCE:\s*(\d{1,3})", re.IGNORECASE)
@@ -154,11 +155,17 @@ def run_fix(
     context_file: str,
     workspace: WorkspaceContext,
     extra_prompt_suffix: str = "",
+    *,
+    recall_seed: str = "",
 ) -> ClaudeExecutionResult:
     prompts_dir = Path(__file__).resolve().parent.parent / "prompts"
     master = (prompts_dir / "master_fix_prompt.md").read_text(encoding="utf-8")
     ctx = Path(context_file).read_text(encoding="utf-8")
     combined = master + "\n\n--- ISSUE CONTEXT ---\n\n" + ctx
+    engram_addon = engram_context.build_agent_prompt_addon(settings, recall_seed=recall_seed)
+    if engram_addon:
+        logger.info("Engram: injected {} chars of briefing/recall into agent prompt", len(engram_addon))
+        combined += "\n\n--- ENGRAM (persistent memory) ---\n\n" + engram_addon
     if extra_prompt_suffix:
         combined += "\n\n--- ADDITIONAL ---\n\n" + extra_prompt_suffix
 

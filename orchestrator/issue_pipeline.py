@@ -76,8 +76,13 @@ def process_single_issue(
         return
 
     try:
-        with issue_phase(issue.key, "Agent: coding CLI (output captured; often 5-15+ minutes)"):
-            claude_result = claude_runner.run_fix(settings, ctx_path, workspace)
+        with issue_phase(issue.key, "Agent: coding CLI (live stream if AGENT_STREAM_OUTPUT=true)"):
+            claude_result = claude_runner.run_fix(
+                settings,
+                ctx_path,
+                workspace,
+                recall_seed=f"{issue.key} {issue.summary}",
+            )
     except (RuntimeError, FileNotFoundError, OSError) as e:
         _operator_alert(settings, audit, f"Agent launcher failed for {issue.key}", str(e))
         summary.failed.append(issue.key)

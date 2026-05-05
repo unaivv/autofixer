@@ -56,7 +56,12 @@ def _npm_script_chain(repo: str) -> tuple[list[str], str]:
             cmds.append(f"npm run {name}")
     if not cmds:
         return [], "package.json has no lint/test/build scripts — skipping npm steps."
-    script = "set -euo pipefail\nnpm ci\n" + "\n".join(cmds)
+    root = Path(repo)
+    has_lock = (root / "package-lock.json").is_file() or (
+        root / "npm-shrinkwrap.json"
+    ).is_file()
+    install = "npm ci" if has_lock else "npm install --no-audit --no-fund"
+    script = "set -euo pipefail\n" + install + "\n" + "\n".join(cmds)
     return cmds, script
 
 

@@ -34,9 +34,15 @@ def run_in_docker(settings: Settings, repo_path: str, bash_script: str) -> Tuple
         text = out.decode("utf-8", errors="replace") if isinstance(out, (bytes, bytearray)) else str(out)
         return True, text
     except docker.errors.ContainerError as e:
-        err = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-        out = e.stdout.decode("utf-8", errors="replace") if e.stdout else ""
-        msg = f"{out}\n{err}\nexit={e.exit_status}"
+        # docker-py only sets .stderr (bytes or None); there is no .stdout.
+        raw = e.stderr
+        if raw is None:
+            err_text = ""
+        elif isinstance(raw, (bytes, bytearray)):
+            err_text = raw.decode("utf-8", errors="replace")
+        else:
+            err_text = str(raw)
+        msg = f"{err_text}\nexit={e.exit_status}"
         return False, msg
     except Exception as e:
         logger.exception("docker run failed")

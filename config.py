@@ -78,14 +78,13 @@ class Settings(BaseSettings):
     # until exit (quieter logs, no live progress).
     agent_stream_output: bool = Field(default=True, validation_alias="AGENT_STREAM_OUTPUT")
 
-    # Local Engram HTTP API (e.g. `npx engram-serve` → http://127.0.0.1:3800). When reachable,
-    # autofixer injects /v1/briefing + /v1/memories/recall into the agent prompt so Claude starts
-    # with durable context without spending tokens rediscovering it. Set ENGRAM_PROMPT_INJECTION=false
-    # to disable. Set ENGRAM_REST_URL= to disable without changing the flag.
-    engram_rest_url: str = Field(
-        default="http://127.0.0.1:3800",
-        validation_alias="ENGRAM_REST_URL",
-    )
+    # Engram preload into the agent prompt (same vault as Cursor MCP if you use the official CLI).
+    # Preferred: `engram` on PATH (Homebrew / your install) — uses `engram context` + `engram search`
+    # in the cloned repo cwd, no separate server. Optional ENGRAM_CLI_PROJECT scopes --project (else
+    # BITBUCKET_REPO_SLUG is used when set). Fallback: ENGRAM_REST_URL for npm-style engram-serve (3800).
+    engram_cli_path: Optional[str] = Field(default=None, validation_alias="ENGRAM_CLI_PATH")
+    engram_project: Optional[str] = Field(default=None, validation_alias="ENGRAM_CLI_PROJECT")
+    engram_rest_url: str = Field(default="", validation_alias="ENGRAM_REST_URL")
     engram_prompt_injection: bool = Field(default=True, validation_alias="ENGRAM_PROMPT_INJECTION")
 
     docker_node_image: str = Field(

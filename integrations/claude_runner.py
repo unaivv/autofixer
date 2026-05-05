@@ -162,7 +162,11 @@ def run_fix(
     master = (prompts_dir / "master_fix_prompt.md").read_text(encoding="utf-8")
     ctx = Path(context_file).read_text(encoding="utf-8")
     combined = master + "\n\n--- ISSUE CONTEXT ---\n\n" + ctx
-    engram_addon = engram_context.build_agent_prompt_addon(settings, recall_seed=recall_seed)
+    engram_addon = engram_context.build_agent_prompt_addon(
+        settings,
+        recall_seed=recall_seed,
+        workspace_path=workspace.local_path,
+    )
     if engram_addon:
         logger.info("Engram: injected {} chars of briefing/recall into agent prompt", len(engram_addon))
         combined += "\n\n--- ENGRAM (persistent memory) ---\n\n" + engram_addon

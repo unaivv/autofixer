@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -29,6 +31,67 @@ def scan_repo_tree(path: str, max_entries: int = 200) -> str:
     return "\n".join(lines)
 
 
+_SKIP_DIRS = {".git", "node_modules", "dist", "build", ".next"}
+_BINARY_EXT = {
+    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".woff", ".woff2",
+    ".zip", ".tar", ".gz", ".pdf", ".exe", ".dll", ".so", ".dylib",
+}
+
+
+def _grep_python(root: str, term: str, max_lines: int = 20) -> str:
+    """Fallback when ripgrep/grep are not installed (typical on Windows)."""
+    lines_out: list[str] = []
+    root_path = Path(root).resolve()
+    count = 0
+    term_lower = term.lower()
+    for dirpath, dirnames, filenames in os.walk(root_path, topdown=True):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for fn in filenames:
+            if count >= max_lines:
+                break
+            fp = Path(dirpath) / fn
+            if fp.suffix.lower() in _BINARY_EXT:
+                continue
+            try:
+                text = fp.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if term_lower not in text.lower():
+                continue
+            rel = fp.relative_to(root_path)
+            for i, line in enumerate(text.splitlines(), 1):
+                if term_lower in line.lower() and count < max_lines:
+                    lines_out.append(f"{rel}:{i}:{line[:240]}")
+                    count += 1
+                    if count >= max_lines:
+                        break
+        if count >= max_lines:
+            break
+    return "\n".join(lines_out)
+
+
+def _grep_one_term(path: str, term: str) -> str:
+    rg = shutil.which("rg")
+    if rg:
+        cp = subprocess.run(
+            [rg, "--line-number", "--max-count", "20", term, path],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return (cp.stdout or "").strip()
+    grep_bin = shutil.which("grep")
+    if grep_bin:
+        cp = subprocess.run(
+            [grep_bin, "-RIn", "--max-count=20", term, path],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return (cp.stdout or "").strip()
+    return _grep_python(path, term, max_lines=20)
+
+
 def grep_keywords(path: str, issue: JiraIssue, max_hits: int = 80) -> str:
     terms: list[str] = []
     for chunk in (issue.summary, issue.description):
@@ -38,29 +101,15 @@ def grep_keywords(path: str, issue: JiraIssue, max_hits: int = 80) -> str:
                 terms.append(w)
     terms = list(dict.fromkeys(terms))[:12]
     if not terms:
-        return "(no keywords for ripgrep)"
+        return "(no keywords for search)"
     hits: list[str] = []
     for t in terms:
-        try:
-            cp = subprocess.run(
-                ["rg", "--line-number", "--max-count", "20", t, path],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        except FileNotFoundError:
-            cp = subprocess.run(
-                ["grep", "-RIn", "--max-count=20", t, path],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        block = (cp.stdout or "").strip()
+        block = _grep_one_term(path, t)
         if block:
             hits.append(f"## matches for `{t}`\n```\n{block[:8000]}\n```")
         if len(hits) * 20 >= max_hits:
             break
-    return "\n\n".join(hits) if hits else "(no ripgrep/grep hits)"
+    return "\n\n".join(hits) if hits else "(no keyword search hits)"
 
 
 def collect_recent_commits(path: str, limit: int = 30) -> str:

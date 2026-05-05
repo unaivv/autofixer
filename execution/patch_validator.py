@@ -43,6 +43,25 @@ def _diff_against_head(repo: str) -> tuple[int, int, str]:
     return files, lines, stat
 
 
+def _detect_pm_install(root: Path, data: dict) -> tuple[str, str]:
+    """
+    Pick package manager + install line for monorepos (Turborepo often needs pnpm in PATH).
+    Order: lockfiles first, then packageManager field.
+    """
+    pkg_pm = (data.get("packageManager") or "").strip().lower()
+    if (root / "pnpm-lock.yaml").is_file():
+        return "pnpm", "pnpm install --frozen-lockfile"
+    if pkg_pm.startswith("pnpm@"):
+        return "pnpm", "pnpm install"
+    if (root / "yarn.lock").is_file():
+        return "yarn", "yarn install --frozen-lockfile"
+    if pkg_pm.startswith("yarn@"):
+        return "yarn", "yarn install"
+    if (root / "package-lock.json").is_file() or (root / "npm-shrinkwrap.json").is_file():
+        return "npm", "npm ci"
+    return "npm", "npm install --no-audit --no-fund"
+
+
 def _npm_script_chain(repo: str) -> tuple[list[str], str]:
     pkg_path = Path(repo) / "package.json"
     if not pkg_path.is_file():
@@ -50,19 +69,24 @@ def _npm_script_chain(repo: str) -> tuple[list[str], str]:
     data = json.loads(pkg_path.read_text(encoding="utf-8"))
     scripts = data.get("scripts") or {}
     order = ["lint", "test", "build"]
-    cmds: list[str] = []
-    for name in order:
-        if name in scripts:
-            cmds.append(f"npm run {name}")
-    if not cmds:
+    wanted: list[str] = [name for name in order if name in scripts]
+    if not wanted:
         return [], "package.json has no lint/test/build scripts — skipping npm steps."
+
     root = Path(repo)
-    has_lock = (root / "package-lock.json").is_file() or (
-        root / "npm-shrinkwrap.json"
-    ).is_file()
-    install = "npm ci" if has_lock else "npm install --no-audit --no-fund"
-    script = "set -euo pipefail\n" + install + "\n" + "\n".join(cmds)
-    return cmds, script
+    pm, install = _detect_pm_install(root, data)
+    run_lines = [f"{pm} run {name}" for name in wanted]
+
+    # corepack: makes pnpm/yarn shims available when package.json declares "packageManager"
+    script = "\n".join(
+        [
+            "set -euo pipefail",
+            "corepack enable",
+            install,
+            *run_lines,
+        ]
+    )
+    return wanted, script
 
 
 def validate(settings: Settings, workspace_path: str) -> ValidationResult:
@@ -85,11 +109,11 @@ def validate(settings: Settings, workspace_path: str) -> ValidationResult:
             lines_changed=lines,
         )
 
-    cmds, npm_script = _npm_script_chain(workspace_path)
+    wanted, docker_script = _npm_script_chain(workspace_path)
     logs.append("## npm plan")
-    logs.append(npm_script)
+    logs.append(docker_script)
 
-    if not cmds:
+    if not wanted:
         logger.info("No npm validation scripts; diff guardrails only.")
         return ValidationResult(
             lint_passed=True,
@@ -100,23 +124,13 @@ def validate(settings: Settings, workspace_path: str) -> ValidationResult:
             lines_changed=lines,
         )
 
-    ok, out = run_in_docker(settings, workspace_path, npm_script)
+    ok, out = run_in_docker(settings, workspace_path, docker_script)
     logs.append("## docker output")
     logs.append(out)
 
-    # If chain ran, assume order lint, test, build for those present
-    wanted = [k for k in ("lint", "test", "build") if f"npm run {k}" in npm_script]
-    lint_ok = True
-    test_ok = True
-    build_ok = True
-    if "lint" in wanted:
-        lint_ok = ok
-    if "test" in wanted:
-        test_ok = ok
-    if "build" in wanted:
-        build_ok = ok
-    if not ok:
-        lint_ok = test_ok = build_ok = False
+    lint_ok = ("lint" not in wanted) or ok
+    test_ok = ("test" not in wanted) or ok
+    build_ok = ("build" not in wanted) or ok
 
     return ValidationResult(
         lint_passed=lint_ok,

@@ -74,6 +74,9 @@ class Settings(BaseSettings):
         default="claude run --dangerously-skip-permissions",
         validation_alias="AGENT_COMMAND",
     )
+    # Stream Claude/agent stdout+stderr to the console while it runs (default). Set false to buffer
+    # until exit (quieter logs, no live progress).
+    agent_stream_output: bool = Field(default=True, validation_alias="AGENT_STREAM_OUTPUT")
 
     docker_node_image: str = Field(
         default="node:20-bookworm",

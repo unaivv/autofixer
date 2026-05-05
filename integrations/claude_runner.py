@@ -7,6 +7,8 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
+import threading
 from pathlib import Path
 
 from loguru import logger
@@ -86,6 +88,67 @@ def _parse_confidence(text: str) -> int:
     return max(0, min(100, v))
 
 
+def _run_agent_streaming(
+    cmd: list[str],
+    cwd: str,
+    stdin_text: str,
+    *,
+    timeout: float,
+) -> tuple[int, str]:
+    """
+    Run agent with merged stderr->stdout, stream each line to the real console, and return
+    (returncode, combined_output) for confidence parsing and audit files.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.stdin:
+        try:
+            proc.stdin.write(stdin_text)
+        finally:
+            proc.stdin.close()
+
+    chunks: list[str] = []
+
+    def _pump_stdout() -> None:
+        assert proc.stdout is not None
+        try:
+            for line in iter(proc.stdout.readline, ""):
+                chunks.append(line)
+                try:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                except OSError:
+                    pass
+        finally:
+            try:
+                proc.stdout.close()
+            except OSError:
+                pass
+
+    pump = threading.Thread(target=_pump_stdout, name="agent-stdout-pump", daemon=True)
+    pump.start()
+    try:
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=45)
+        except subprocess.TimeoutExpired:
+            pass
+        pump.join(timeout=30)
+        raise RuntimeError(f"Agent timed out after {timeout:.0f}s") from None
+    pump.join(timeout=120)
+    return rc, "".join(chunks)
+
+
 def run_fix(
     settings: Settings,
     context_file: str,
@@ -105,34 +168,54 @@ def run_fix(
     cmd = _resolve_agent_argv(shlex.split(settings.agent_command))
 
     logger.info("Agent cwd={} argv={}", workspace.local_path, cmd)
-    logger.info(
-        "Agent subprocess started (stdout/stderr captured — no live stream until it exits; timeout 3600s)."
-    )
-    # Default: feed full prompt on stdin (equivalent to `agent < prompt.txt`).
+    _timeout = 3600.0
+
     try:
-        # Windows defaults to cp1252 for subprocess pipes; Jira/context often has UTF-8/emoji.
-        proc = subprocess.run(
-            cmd,
-            cwd=workspace.local_path,
-            input=combined,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=3600,
-        )
+        if settings.agent_stream_output:
+            logger.info(
+                "Agent running — streaming stdout/stderr below (merged). Timeout {:.0f}s. "
+                "Set AGENT_STREAM_OUTPUT=false to buffer until exit.",
+                _timeout,
+            )
+            returncode, combined_out = _run_agent_streaming(
+                cmd,
+                workspace.local_path,
+                combined,
+                timeout=_timeout,
+            )
+            stdout = combined_out
+            stderr = ""
+        else:
+            logger.info(
+                "Agent running with output buffered (AGENT_STREAM_OUTPUT=false). Timeout {:.0f}s.",
+                _timeout,
+            )
+            proc = subprocess.run(
+                cmd,
+                cwd=workspace.local_path,
+                input=combined,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=int(_timeout),
+            )
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
+            returncode = proc.returncode
+            combined_out = stdout + "\n" + stderr
     except FileNotFoundError as e:
         raise RuntimeError(
             f"Failed to execute agent command {cmd!r}: {e}. "
             "Set AGENT_COMMAND to the full path of your CLI."
         ) from e
-    stdout = proc.stdout or ""
-    stderr = proc.stderr or ""
-    logger.info("Agent subprocess finished with exit code {}", proc.returncode)
-    combined_out = stdout + "\n" + stderr
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"Agent timed out after {_timeout:.0f}s") from None
+
+    logger.info("Agent finished with exit code {}", returncode)
     confidence = _parse_confidence(combined_out)
     files_changed, lines_changed = _git_diff_stats(workspace.local_path)
-    success = proc.returncode == 0
+    success = returncode == 0
     return ClaudeExecutionResult(
         success=success,
         stdout=stdout,

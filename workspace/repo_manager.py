@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -25,10 +27,24 @@ def resolve_repo(settings: Settings, _issue: JiraIssue) -> str:
     return settings.git_clone_url()
 
 
+def _force_rmtree(path: Path) -> None:
+    """Windows: git checkouts mark some files read-only; rmtree then raises PermissionError."""
+
+    def _chmod_and_retry(func, p, _exc_info):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            raise
+
+    if path.exists():
+        shutil.rmtree(path, onerror=_chmod_and_retry)
+
+
 def clone_repo(settings: Settings, repo_url: str, issue_key: str) -> str:
-    base = Path(settings.workspace_root) / issue_key / "repo"
+    base = Path(settings.workspace_root).expanduser().resolve() / issue_key / "repo"
     if base.exists():
-        shutil.rmtree(base)
+        _force_rmtree(base)
     base.parent.mkdir(parents=True, exist_ok=True)
     logger.info("Cloning into {}", base)
     cp = subprocess.run(

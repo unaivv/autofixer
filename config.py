@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import tempfile
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_workspace_root() -> str:
+    """Use OS temp dir (works on Windows; avoids /tmp which is awkward there)."""
+    return str(Path(tempfile.gettempdir()) / "ai_agent_runs")
 
 
 class Settings(BaseSettings):
@@ -53,7 +60,7 @@ class Settings(BaseSettings):
     )
 
     workspace_root: str = Field(
-        default="/tmp/ai_agent_runs",
+        default_factory=_default_workspace_root,
         validation_alias="WORKSPACE_ROOT",
     )
     max_daily_issues: int = Field(default=5, validation_alias="MAX_DAILY_ISSUES")

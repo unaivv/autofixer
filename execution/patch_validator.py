@@ -54,6 +54,7 @@ def _scoped_turbo_package_names(repo: str) -> list[str] | None:
             d = (root / cand).resolve().parent
         cur = d
         matched = False
+        root_workspace_only = False
         while True:
             pj = cur / "package.json"
             if pj.is_file():
@@ -65,7 +66,10 @@ def _scoped_turbo_package_names(repo: str) -> list[str] | None:
                 if not name:
                     return None
                 if cur.resolve() == root and is_workspace_root:
-                    return None
+                    # e.g. pnpm-lock.yaml, turbo.json — skip for --filter mapping; do not
+                    # abort the whole scan (that forced full monorepo test + unrelated app failures).
+                    root_workspace_only = True
+                    break
                 names.add(str(name))
                 matched = True
                 break
@@ -75,6 +79,8 @@ def _scoped_turbo_package_names(repo: str) -> list[str] | None:
             if parent == cur:
                 break
             cur = parent
+        if root_workspace_only:
+            continue
         if not matched:
             return None
     return sorted(names) if names else None
@@ -160,6 +166,12 @@ def _npm_script_chain(repo: str, turbo_filter_changed: bool) -> tuple[list[str],
         tasks = " ".join(wanted)
         turbo_line = f"{_turbo_pm_prefix(pm)} run {tasks} {filters}"
         run_lines = [turbo_line]
+        logger.info("Docker validation: turbo scoped to {}", ", ".join(scoped))
+    elif turbo_filter_changed and _repo_has_turbo(root):
+        logger.info(
+            "Docker validation: turbo repo detected but scope unavailable — running full root scripts "
+            "(diff may be root-only or unmapped paths)."
+        )
 
     # corepack: makes pnpm/yarn shims available when package.json declares "packageManager"
     script = "\n".join(

@@ -107,12 +107,15 @@ def run_fix(
     logger.info("Running agent in {}: {}", workspace.local_path, cmd)
     # Default: feed full prompt on stdin (equivalent to `agent < prompt.txt`).
     try:
+        # Windows defaults to cp1252 for subprocess pipes; Jira/context often has UTF-8/emoji.
         proc = subprocess.run(
             cmd,
             cwd=workspace.local_path,
             input=combined,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=3600,
         )
     except FileNotFoundError as e:

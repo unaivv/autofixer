@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     )
 
     agent_command: str = Field(
-        default="claude-code run --dangerously-skip-permissions",
+        default="claude run --dangerously-skip-permissions",
         validation_alias="AGENT_COMMAND",
     )
 

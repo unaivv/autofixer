@@ -33,12 +33,22 @@ def _resolve_agent_argv(argv: list[str]) -> list[str]:
     resolved = shutil.which(exe)
     if resolved:
         return [resolved] + argv[1:]
+    # Official / npm installs often expose `claude`, not `claude-code`.
+    if exe in ("claude-code", "claude.cmd"):
+        alt = shutil.which("claude")
+        if alt:
+            logger.warning(
+                "{!r} not on PATH; using {!r} (same args). Override AGENT_COMMAND if needed.",
+                exe,
+                alt,
+            )
+            return [alt] + argv[1:]
     raise RuntimeError(
         f"AGENT_COMMAND starts with {exe!r}, which is not on PATH.\n"
-        "Install your coding agent CLI, or set AGENT_COMMAND to a full path, e.g.:\n"
-        "  AGENT_COMMAND=/opt/homebrew/bin/claude run ...\n"
-        "Common names: claude, claude-code, cursor (depends on your install).\n"
-        "Check with: which claude   or   which claude-code"
+        "If `claude` works in your terminal, set e.g.:\n"
+        "  AGENT_COMMAND=claude run --dangerously-skip-permissions\n"
+        "Or use the full path from `where claude` (Windows) / `which claude` (macOS/Linux) — "
+        "IDEs and `python main.py` sometimes inherit a smaller PATH than your shell."
     )
 
 

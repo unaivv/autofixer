@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Tuple
 
 import docker
@@ -22,33 +23,54 @@ def run_in_docker(settings: Settings, repo_path: str, bash_script: str) -> Tuple
 
     image = settings.docker_node_image
     logger.info(
-        "Docker: starting container image={} (bind mount repo -> /workspace; no streaming logs until exit)",
+        "Docker: starting image={} (repo -> /workspace). Streaming logs below. "
+        "Silence can mean: pulling the image, npm/pnpm resolve, or turbo starting — often several minutes.",
         image,
     )
+
+    container = None
     try:
-        out = client.containers.run(
+        container = client.containers.create(
             image,
             command=["bash", "-lc", bash_script],
-            remove=True,
             volumes={repo_path: {"bind": "/workspace", "mode": "rw"}},
             working_dir="/workspace",
-            stdout=True,
-            stderr=True,
         )
-        text = out.decode("utf-8", errors="replace") if isinstance(out, (bytes, bytearray)) else str(out)
-        logger.info("Docker: container finished successfully")
-        return True, text
-    except docker.errors.ContainerError as e:
-        # docker-py only sets .stderr (bytes or None); there is no .stdout.
-        raw = e.stderr
-        if raw is None:
-            err_text = ""
-        elif isinstance(raw, (bytes, bytearray)):
-            err_text = raw.decode("utf-8", errors="replace")
-        else:
-            err_text = str(raw)
-        msg = f"{err_text}\nexit={e.exit_status}"
-        return False, msg
+        collected: list[bytes] = []
+        container.start()
+        try:
+            for chunk in container.logs(stream=True, follow=True, stdout=True, stderr=True):
+                if not chunk:
+                    continue
+                collected.append(chunk)
+                try:
+                    piece = (
+                        chunk.decode("utf-8", errors="replace")
+                        if isinstance(chunk, (bytes, bytearray))
+                        else str(chunk)
+                    )
+                    sys.stdout.write(piece)
+                    sys.stdout.flush()
+                except OSError:
+                    pass
+        finally:
+            wait_result = container.wait()
+        status = wait_result.get("StatusCode", -1)
+        text = b"".join(collected).decode("utf-8", errors="replace")
+        ok = status == 0
+        if ok:
+            logger.info("Docker: finished OK (exit 0)")
+            return True, text
+        logger.error("Docker: container exited with status {}", status)
+        return False, f"{text}\nexit={status}"
     except Exception as e:
         logger.exception("docker run failed")
         return False, str(e)
+    finally:
+        if container is not None:
+            try:
+                container.remove(force=True)
+            except docker.errors.APIError:
+                pass
+            except Exception:
+                pass

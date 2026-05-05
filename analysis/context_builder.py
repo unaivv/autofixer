@@ -138,6 +138,14 @@ def locate_tests(path: str) -> str:
 def build(issue: JiraIssue, workspace: WorkspaceContext) -> str:
     path = workspace.local_path
     ctx = Path(path) / "issue_context.md"
+    logger.info("Context: scanning repository tree (max entries capped)...")
+    tree_block = scan_repo_tree(path)
+    logger.info("Context: loading recent git history...")
+    commits_block = collect_recent_commits(path)
+    logger.info("Context: locating test files...")
+    tests_block = locate_tests(path)
+    logger.info("Context: keyword search across repo (slow on large monorepos like xplat)...")
+    grep_block = grep_keywords(path, issue)
     body = [
         "# Jira issue",
         f"Key: {issue.key}",
@@ -157,21 +165,21 @@ def build(issue: JiraIssue, workspace: WorkspaceContext) -> str:
         "## Repository snapshot",
         "### Tree (partial)",
         "```",
-        scan_repo_tree(path),
+        tree_block,
         "```",
         "",
         "### Recent commits",
         "```",
-        collect_recent_commits(path),
+        commits_block,
         "```",
         "",
         "### Likely tests",
         "```",
-        locate_tests(path),
+        tests_block,
         "```",
         "",
         "### Keyword search",
-        grep_keywords(path, issue),
+        grep_block,
         "",
         "## Raw issue JSON (truncated)",
         "```json",

@@ -104,7 +104,10 @@ def run_fix(
 
     cmd = _resolve_agent_argv(shlex.split(settings.agent_command))
 
-    logger.info("Running agent in {}: {}", workspace.local_path, cmd)
+    logger.info("Agent cwd={} argv={}", workspace.local_path, cmd)
+    logger.info(
+        "Agent subprocess started (stdout/stderr captured — no live stream until it exits; timeout 3600s)."
+    )
     # Default: feed full prompt on stdin (equivalent to `agent < prompt.txt`).
     try:
         # Windows defaults to cp1252 for subprocess pipes; Jira/context often has UTF-8/emoji.
@@ -125,6 +128,7 @@ def run_fix(
         ) from e
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
+    logger.info("Agent subprocess finished with exit code {}", proc.returncode)
     combined_out = stdout + "\n" + stderr
     confidence = _parse_confidence(combined_out)
     files_changed, lines_changed = _git_diff_stats(workspace.local_path)

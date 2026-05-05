@@ -21,6 +21,10 @@ def run_in_docker(settings: Settings, repo_path: str, bash_script: str) -> Tuple
         return False, str(e)
 
     image = settings.docker_node_image
+    logger.info(
+        "Docker: starting container image={} (bind mount repo -> /workspace; no streaming logs until exit)",
+        image,
+    )
     try:
         out = client.containers.run(
             image,
@@ -32,6 +36,7 @@ def run_in_docker(settings: Settings, repo_path: str, bash_script: str) -> Tuple
             stderr=True,
         )
         text = out.decode("utf-8", errors="replace") if isinstance(out, (bytes, bytearray)) else str(out)
+        logger.info("Docker: container finished successfully")
         return True, text
     except docker.errors.ContainerError as e:
         # docker-py only sets .stderr (bytes or None); there is no .stdout.

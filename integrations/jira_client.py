@@ -92,6 +92,7 @@ def fetch_candidate_issues(settings: Settings) -> list[JiraIssue]:
         "fields": "summary,description,comment,labels,priority,components",
     }
     logger.info("Jira enhanced search JQL: {}", jql)
+    logger.info("Jira: GET {} ...", url)
     resp = requests.get(url, params=params, auth=_auth(settings), timeout=120)
     resp.raise_for_status()
     data = resp.json()

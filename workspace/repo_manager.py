@@ -80,6 +80,7 @@ def _force_rmtree(path: Path, *, max_attempts: int = 6) -> None:
     if not path.exists():
         return
     path = path.resolve()
+    logger.debug("Removing tree {}", path)
     last: OSError | None = None
     for attempt in range(max_attempts):
         _avoid_cwd_inside_tree(path)
@@ -99,9 +100,10 @@ def _force_rmtree(path: Path, *, max_attempts: int = 6) -> None:
 def clone_repo(settings: Settings, repo_url: str, issue_key: str) -> str:
     base = Path(settings.workspace_root).expanduser().resolve() / issue_key / "repo"
     if base.exists():
+        logger.info("Removing previous clone at {}", base)
         _force_rmtree(base)
     base.parent.mkdir(parents=True, exist_ok=True)
-    logger.info("Cloning into {}", base)
+    logger.info("git clone -> {} (quiet; network speed dominates)", base)
     cp = subprocess.run(
         ["git", "clone", repo_url, str(base)],
         check=False,
@@ -128,12 +130,14 @@ def clone_repo(settings: Settings, repo_url: str, issue_key: str) -> str:
 
 def checkout_default_branch(settings: Settings, path: str) -> None:
     b = settings.default_branch
+    logger.info("git fetch origin (quiet)...")
     subprocess.run(
         ["git", "-C", path, "fetch", "origin"],
         check=True,
         capture_output=True,
         text=True,
     )
+    logger.info("git checkout {} + reset --hard origin/{}", b, b)
     subprocess.run(
         ["git", "-C", path, "checkout", b],
         check=True,

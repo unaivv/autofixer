@@ -141,10 +141,14 @@ def publish_pr(
             commit_hash="",
         )
 
+    logger.info("git checkout -b {}", branch_name)
     create_branch(local_repo, branch_name)
     msg = f"[AI FIX] {issue.key} conservative automated bug fix"
+    logger.info("git add / commit...")
     commit_hash = commit_all(local_repo, msg)
+    logger.info("git push -u origin {} ...", branch_name)
     push_branch(settings, local_repo, branch_name)
+    logger.info("Bitbucket: creating pull request via REST...")
     pr = create_pull_request(settings, issue, branch_name, claude_result, validation)
     return PullRequestResult(
         pr_url=pr.pr_url,

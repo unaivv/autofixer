@@ -211,6 +211,7 @@ def validate(settings: Settings, workspace_path: str) -> ValidationResult:
             lines_changed=lines,
         )
 
+    logger.info("Docker validation plan:\n{}", docker_script)
     ok, out = run_in_docker(settings, workspace_path, docker_script)
     logs.append("## docker output")
     logs.append(out)

@@ -64,10 +64,35 @@ def _transient_rmtree_exc(exc: OSError) -> bool:
             return True
         if we == 5:  # access denied — often transient when another handle closes
             return True
+        # Seen as OSError(22, ...) on some setups; one retry + rd /s /q fallback often clears it.
+        if we == 87 or exc.errno == errno.EINVAL:  # ERROR_INVALID_PARAMETER / EINVAL
+            return True
     return exc.errno in (errno.EACCES, errno.EPERM, errno.EBUSY, errno.EAGAIN)
 
 
-def _force_rmtree(path: Path, *, max_attempts: int = 6) -> None:
+def _windows_cmd_rd_tree(path: Path) -> bool:
+    """Last-resort directory delete on Windows (handles stray read-only / odd reparse points)."""
+    if os.name != "nt":
+        return False
+    target = str(path)
+    try:
+        cp = subprocess.run(
+            ["cmd.exe", "/c", "rd", "/s", "/q", target],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            cwd=tempfile.gettempdir(),
+        )
+        ok = cp.returncode == 0 and not path.exists()
+        if not ok and (cp.stderr or cp.stdout):
+            logger.debug("cmd rd exit={} out={}", cp.returncode, (cp.stderr or cp.stdout)[:400])
+        return ok
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logger.warning("cmd rd /s /q failed for {}: {}", target, e)
+        return False
+
+
+def _force_rmtree(path: Path, *, max_attempts: int = 8) -> None:
     """Remove a tree; Windows: read-only git files, cwd-inside-tree, transient file locks."""
 
     def _chmod_and_retry(func, p, _exc_info):
@@ -79,11 +104,16 @@ def _force_rmtree(path: Path, *, max_attempts: int = 6) -> None:
 
     if not path.exists():
         return
-    path = path.resolve()
+    try:
+        path = path.resolve()
+    except OSError:
+        path = path.absolute()
     logger.debug("Removing tree {}", path)
     last: OSError | None = None
     for attempt in range(max_attempts):
         _avoid_cwd_inside_tree(path)
+        if not path.exists():
+            return
         try:
             shutil.rmtree(path, onerror=_chmod_and_retry)
             return
@@ -92,16 +122,44 @@ def _force_rmtree(path: Path, *, max_attempts: int = 6) -> None:
             if _transient_rmtree_exc(e) and attempt + 1 < max_attempts:
                 time.sleep(0.35 * (attempt + 1))
                 continue
-            raise
+            break
+    if path.exists() and os.name == "nt":
+        logger.warning(
+            "shutil.rmtree did not clear {}; last error: {} (errno={} winerror={}) — trying cmd rd /s /q",
+            path,
+            last,
+            getattr(last, "errno", None),
+            getattr(last, "winerror", None),
+        )
+        _avoid_cwd_inside_tree(path)
+        if _windows_cmd_rd_tree(path):
+            return
     if last:
         raise last
+    if path.exists():
+        raise OSError(errno.EIO, f"Could not remove workspace tree: {path}")
 
 
 def clone_repo(settings: Settings, repo_url: str, issue_key: str) -> str:
-    base = Path(settings.workspace_root).expanduser().resolve() / issue_key / "repo"
+    root_ws = Path(settings.workspace_root).expanduser()
+    try:
+        root_ws = root_ws.resolve()
+    except OSError:
+        root_ws = root_ws.absolute()
+    base = root_ws / issue_key / "repo"
     if base.exists():
         logger.info("Removing previous clone at {}", base)
-        _force_rmtree(base)
+        try:
+            _force_rmtree(base)
+        except OSError as e:
+            logger.error(
+                "Failed to remove old clone at {}: errno={} winerror={!r} — close programs using "
+                "that folder (Explorer, IDE, terminals cd'd into it), or set WORKSPACE_ROOT to a new path.",
+                base,
+                getattr(e, "errno", None),
+                getattr(e, "winerror", None),
+            )
+            raise
     base.parent.mkdir(parents=True, exist_ok=True)
     logger.info("git clone -> {} (quiet; network speed dominates)", base)
     cp = subprocess.run(

@@ -80,6 +80,8 @@ def _windows_cmd_rd_tree(path: Path) -> bool:
             ["cmd.exe", "/c", "rd", "/s", "/q", target],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=180,
             cwd=tempfile.gettempdir(),
         )
@@ -167,6 +169,8 @@ def clone_repo(settings: Settings, repo_url: str, issue_key: str) -> str:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if cp.returncode != 0:
         err = (cp.stderr or "").strip() or (cp.stdout or "").strip()
@@ -188,31 +192,28 @@ def clone_repo(settings: Settings, repo_url: str, issue_key: str) -> str:
 
 def checkout_default_branch(settings: Settings, path: str) -> None:
     b = settings.default_branch
+    _txt = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace"}
     logger.info("git fetch origin (quiet)...")
     subprocess.run(
         ["git", "-C", path, "fetch", "origin"],
         check=True,
-        capture_output=True,
-        text=True,
+        **_txt,
     )
     logger.info("git checkout {} + reset --hard origin/{}", b, b)
     subprocess.run(
         ["git", "-C", path, "checkout", b],
         check=True,
-        capture_output=True,
-        text=True,
+        **_txt,
     )
     subprocess.run(
         ["git", "-C", path, "reset", "--hard", f"origin/{b}"],
         check=True,
-        capture_output=True,
-        text=True,
+        **_txt,
     )
     subprocess.run(
         ["git", "-C", path, "clean", "-fd"],
         check=True,
-        capture_output=True,
-        text=True,
+        **_txt,
     )
 
 

@@ -34,12 +34,20 @@ def _slugify(text: str, max_len: int = 40) -> str:
     return (s[:max_len] or "fix").rstrip("-")
 
 
+# Windows defaults subprocess text to cp1252; git/hooks may emit UTF-8 → UnicodeDecodeError in reader threads.
+_GIT_RUN_TXT = {
+    "capture_output": True,
+    "text": True,
+    "encoding": "utf-8",
+    "errors": "replace",
+}
+
+
 def create_branch(local_repo: str, branch_name: str) -> None:
     subprocess.run(
         ["git", "-C", local_repo, "checkout", "-b", branch_name],
         check=True,
-        capture_output=True,
-        text=True,
+        **_GIT_RUN_TXT,
     )
 
 
@@ -50,8 +58,7 @@ def push_branch(settings: Settings, local_repo: str, branch_name: str) -> None:
     subprocess.run(
         ["git", "-C", local_repo, "push", "-u", "origin", branch_name],
         check=True,
-        capture_output=True,
-        text=True,
+        **_GIT_RUN_TXT,
     )
 
 
@@ -107,20 +114,26 @@ def commit_all(local_repo: str, message: str) -> str:
     subprocess.run(
         ["git", "-C", local_repo, "add", "-A"],
         check=True,
-        capture_output=True,
-        text=True,
+        **_GIT_RUN_TXT,
     )
-    subprocess.run(
+    cmt = subprocess.run(
         ["git", "-C", local_repo, "commit", "-m", message],
-        check=True,
-        capture_output=True,
-        text=True,
+        check=False,
+        **_GIT_RUN_TXT,
     )
+    if cmt.returncode != 0:
+        err = ((cmt.stderr or "") + "\n" + (cmt.stdout or "")).strip()[:8000]
+        logger.error("git commit failed (exit {}): {}", cmt.returncode, err or "(no output)")
+        raise subprocess.CalledProcessError(
+            cmt.returncode,
+            ["git", "-C", local_repo, "commit", "-m", message],
+            output=cmt.stdout,
+            stderr=cmt.stderr,
+        )
     cp = subprocess.run(
         ["git", "-C", local_repo, "rev-parse", "HEAD"],
         check=True,
-        capture_output=True,
-        text=True,
+        **_GIT_RUN_TXT,
     )
     return cp.stdout.strip()
 

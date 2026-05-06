@@ -77,6 +77,8 @@ def _grep_one_term(path: str, term: str) -> str:
             [rg, "--line-number", "--max-count", "20", term, path],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60,
         )
         return (cp.stdout or "").strip()
@@ -86,6 +88,8 @@ def _grep_one_term(path: str, term: str) -> str:
             [grep_bin, "-RIn", "--max-count=20", term, path],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
         )
         return (cp.stdout or "").strip()
@@ -117,6 +121,8 @@ def collect_recent_commits(path: str, limit: int = 30) -> str:
         ["git", "-C", path, "log", f"-{limit}", "--oneline"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     return (cp.stdout or "").strip()

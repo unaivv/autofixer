@@ -12,13 +12,14 @@ from config import Settings
 from execution.docker_runner import run_in_docker
 from models.issue_models import ValidationResult
 
+_GIT_TXT = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace"}
+
 
 def _diff_changed_paths(repo: str) -> list[str]:
     cp = subprocess.run(
         ["git", "-C", repo, "diff", "--name-only", "HEAD"],
-        capture_output=True,
-        text=True,
         check=False,
+        **_GIT_TXT,
     )
     return [ln.strip().replace("\\", "/") for ln in (cp.stdout or "").splitlines() if ln.strip()]
 
@@ -97,16 +98,14 @@ def _turbo_pm_prefix(pm: str) -> str:
 def _diff_against_head(repo: str) -> tuple[int, int, str]:
     cp = subprocess.run(
         ["git", "-C", repo, "diff", "--stat", "HEAD"],
-        capture_output=True,
-        text=True,
         check=False,
+        **_GIT_TXT,
     )
     stat = (cp.stdout or "").strip()
     cp2 = subprocess.run(
         ["git", "-C", repo, "diff", "--numstat", "HEAD"],
-        capture_output=True,
-        text=True,
         check=False,
+        **_GIT_TXT,
     )
     files = 0
     lines = 0

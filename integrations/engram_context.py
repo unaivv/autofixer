@@ -30,6 +30,8 @@ def _run_cli(argv: list[str], *, cwd: str, timeout: float = 45.0) -> str:
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
         )
